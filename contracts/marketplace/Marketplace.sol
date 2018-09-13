@@ -25,6 +25,11 @@ contract ERC721Interface {
   function safeTransferFrom(address _from, address _to, uint256 _tokenId) public;
 }
 
+contract ERC721Verifiable extends ERC721Interface {
+  function supportsInterface(bytes4) public view returns (bool);
+  function validateSummary(uint256, bytes) public view returns (bool);
+}
+
 
 contract Marketplace is Ownable, Pausable, Destructible {
   using SafeMath for uint256;
@@ -50,6 +55,9 @@ contract Marketplace is Ownable, Pausable, Destructible {
 
   uint256 public ownerCutPercentage;
   uint256 public publicationFeeInWei;
+
+
+  bytes4 InterfaceId_HasMarketplaceCheck = bytes4(keccak256("validateSummary(uint256,bytes)"));
 
   /* EVENTS */
   event OrderCreated(
@@ -127,7 +135,7 @@ contract Marketplace is Ownable, Pausable, Destructible {
   {
     require(nftAddress.isContract(), "The NFT Address should be a contract");
 
-    ERC721Interface nftRegistry = ERC721Interface(nftAddress);
+    ERC721Verifiable nftRegistry = ERC721Verifiable(nftAddress);
     address assetOwner = nftRegistry.ownerOf(assetId);
 
     require(msg.sender == assetOwner, "Only the owner can create orders");
@@ -206,20 +214,24 @@ contract Marketplace is Ownable, Pausable, Destructible {
     * @param nftAddress - Address of the NFT registry
     * @param assetId - ID of the published NFT
     * @param price - Order price
+    * @param bytes - Verification info
     */
-  function executeOrder(address nftAddress, uint256 assetId, uint256 price) public whenNotPaused {
+  function executeOrder(address nftAddress, uint256 assetId, uint256 price, bytes verificationData) public whenNotPaused {
     Order memory order = orderByAssetId[nftAddress][assetId];
 
     require(order.id != 0, "Asset not published");
 
     address seller = order.seller;
-    ERC721Interface nftRegistry = ERC721Interface(nftAddress);
+    ERC721Verifiable nftRegistry = ERC721Verifiable(nftAddress);
 
     require(seller != address(0), "Invalid address");
     require(seller != msg.sender, "Unauthorized user");
     require(order.price == price, "The price is not correct");
     require(block.timestamp < order.expiresAt, "The order expired");
     require(seller == nftRegistry.ownerOf(assetId), "The seller is no longer the owner");
+    if (nftRegistry.supportsInterface(InterfaceId_HasMarketplaceCheck)) {
+      require(nftRegistry.validateSummary(assetId, verificationData));
+    }
 
     uint saleShareAmount = 0;
 
