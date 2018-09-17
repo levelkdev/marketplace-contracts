@@ -1,4 +1,4 @@
-pragma solidity ^0.4.23;
+pragma solidity ^0.4.24;
 
 import "openzeppelin-solidity/contracts/ownership/Ownable.sol";
 import "openzeppelin-solidity/contracts/lifecycle/Pausable.sol";
@@ -24,11 +24,11 @@ contract ERC721Interface {
   function getApproved(uint256 _tokenId) public view returns (address);
   function isApprovedForAll(address _owner, address _operator) public view returns (bool);
   function safeTransferFrom(address _from, address _to, uint256 _tokenId) public;
+  function supportsInterface(bytes4) public view returns (bool);
 }
 
 
 contract ERC721Verifiable is ERC721Interface {
-  function supportsInterface(bytes4) public view returns (bool);
   function validateFingerprint(uint256, bytes) public view returns (bool);
 }
 
@@ -138,7 +138,7 @@ contract Marketplace is Ownable, Pausable, Destructible {
   {
     require(nftAddress.isContract(), "The NFT Address should be a contract");
 
-    ERC721Verifiable nftRegistry = ERC721Verifiable(nftAddress);
+    ERC721Interface nftRegistry = ERC721Interface(nftAddress);
     address assetOwner = nftRegistry.ownerOf(assetId);
 
     require(msg.sender == assetOwner, "Only the owner can create orders");
@@ -219,7 +219,7 @@ contract Marketplace is Ownable, Pausable, Destructible {
     * @param price - Order price
     * @param fingerprint - Verification info
     */
-  function executeOrder(
+  function executeOrderWithCheck(
     address nftAddress,
     uint256 assetId,
     uint256 price,
@@ -233,16 +233,14 @@ contract Marketplace is Ownable, Pausable, Destructible {
     require(order.id != 0, "Asset not published");
 
     address seller = order.seller;
-    ERC721Verifiable nftRegistry = ERC721Verifiable(nftAddress);
+    ERC721Interface nftRegistry = ERC721Interface(nftAddress);
 
     require(seller != address(0), "Invalid address");
     require(seller != msg.sender, "Unauthorized user");
     require(order.price == price, "The price is not correct");
     require(block.timestamp < order.expiresAt, "The order expired");
     require(seller == nftRegistry.ownerOf(assetId), "The seller is no longer the owner");
-    if (nftRegistry.supportsInterface(InterfaceId_ValidateFingerprint)) {
-      require(nftRegistry.validateFingerprint(assetId, fingerprint), "The asset fingerprint is not valid");
-    }
+    validateFingerprint(nftRegistry, assetId, fingerprint);
 
     uint saleShareAmount = 0;
 
@@ -283,5 +281,23 @@ contract Marketplace is Ownable, Pausable, Destructible {
       price,
       msg.sender
     );
+  }
+
+  function validateFingerprint(
+    address nftAddress,
+    uint256 assetId,
+    bytes fingerprint
+  )
+    internal
+    view
+  {
+    ERC721Verifiable verifiableNftRegistry = ERC721Verifiable(nftAddress);
+
+    if (verifiableNftRegistry.supportsInterface(InterfaceId_ValidateFingerprint)) {
+      require(
+        verifiableNftRegistry.validateFingerprint(assetId, fingerprint),
+        "The asset fingerprint is not valid"
+      );
+    }
   }
 }
