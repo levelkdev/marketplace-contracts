@@ -14,6 +14,7 @@ contract ERC20Interface {
   function transferFrom(address from, address to, uint tokens) public returns (bool success);
 }
 
+
 /**
  * @title Interface for contracts conforming to ERC-721
  */
@@ -25,9 +26,10 @@ contract ERC721Interface {
   function safeTransferFrom(address _from, address _to, uint256 _tokenId) public;
 }
 
-contract ERC721Verifiable extends ERC721Interface {
+
+contract ERC721Verifiable is ERC721Interface {
   function supportsInterface(bytes4) public view returns (bool);
-  function validateSummary(uint256, bytes) public view returns (bool);
+  function validateFingerprint(uint256, bytes) public view returns (bool);
 }
 
 
@@ -56,8 +58,9 @@ contract Marketplace is Ownable, Pausable, Destructible {
   uint256 public ownerCutPercentage;
   uint256 public publicationFeeInWei;
 
-
-  bytes4 InterfaceId_HasMarketplaceCheck = bytes4(keccak256("validateSummary(uint256,bytes)"));
+  bytes4 public constant InterfaceId_ValidateFingerprint = bytes4(
+    keccak256("validateFingerprint(uint256,bytes)")
+  );
 
   /* EVENTS */
   event OrderCreated(
@@ -214,9 +217,17 @@ contract Marketplace is Ownable, Pausable, Destructible {
     * @param nftAddress - Address of the NFT registry
     * @param assetId - ID of the published NFT
     * @param price - Order price
-    * @param bytes - Verification info
+    * @param fingerprint - Verification info
     */
-  function executeOrder(address nftAddress, uint256 assetId, uint256 price, bytes verificationData) public whenNotPaused {
+  function executeOrder(
+    address nftAddress,
+    uint256 assetId,
+    uint256 price,
+    bytes fingerprint
+  )
+   public
+   whenNotPaused
+  {
     Order memory order = orderByAssetId[nftAddress][assetId];
 
     require(order.id != 0, "Asset not published");
@@ -229,8 +240,8 @@ contract Marketplace is Ownable, Pausable, Destructible {
     require(order.price == price, "The price is not correct");
     require(block.timestamp < order.expiresAt, "The order expired");
     require(seller == nftRegistry.ownerOf(assetId), "The seller is no longer the owner");
-    if (nftRegistry.supportsInterface(InterfaceId_HasMarketplaceCheck)) {
-      require(nftRegistry.validateSummary(assetId, verificationData));
+    if (nftRegistry.supportsInterface(InterfaceId_ValidateFingerprint)) {
+      require(nftRegistry.validateFingerprint(assetId, fingerprint), "The asset fingerprint is not valid");
     }
 
     uint saleShareAmount = 0;
