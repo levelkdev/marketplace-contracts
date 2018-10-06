@@ -231,15 +231,15 @@ contract('Marketplace', function(accounts) {
       let publicationFee = web3.toWei(0.5, 'ether')
       let assetId = await land.encodeTokenId(0, 1)
 
-      beforeSellerBalance = await erc20.balanceOf(seller)
-      beforeSellerBalance.should.be.bignumber.equal(0, 'ether')
+      initialBalanceSeller = await erc20.balanceOf(seller)
+      initialBalanceSeller.should.be.bignumber.equal(0, 'ether')
 
       await marketInstance.createOrder(land.address, assetId, itemPrice, endTime, { from: seller })
       await marketInstance.setPublicationFee(publicationFee, { from: owner })  
       await marketInstance.executeOrder(land.address, assetId, itemPrice, { from: buyer})
 
-      afterSellerBalance = await erc20.balanceOf(seller)
-      afterSellerBalance.should.be.bignumber.equal(itemPrice)
+      endingBalanceSeller = await erc20.balanceOf(seller)
+      endingBalanceSeller.should.be.bignumber.equal(itemPrice)
     })
 
     it('should transfer the owner\'s cut to the owner', async function() {
