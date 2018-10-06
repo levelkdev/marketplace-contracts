@@ -670,7 +670,127 @@ contract('Marketplace', function([_, owner, seller, buyer, otherAddress]) {
     })
   })
 
+  describe('When an NFT is changed after the order is started', function() {
+    beforeEach(async function() {
+      await land.setApprovalForAll(marketInstance.address, true, {from: seller})
+      await land.setApprovalForAll(marketInstance.address, true, {from: buyer})
 
+      await estateInstance.setApprovalForAll(marketInstance.address, true, {from: seller})
+      await estateInstance.setApprovalForAll(marketInstance.address, true, {from: buyer})
+     
+      // Assign balance to buyer and allow marketplace to move ERC20
+      await erc20.setBalance(buyer, web3.toWei(10, 'ether'))
+      await erc20.approve(marketInstance.address, 1e30, { from: seller })
+      await erc20.approve(marketInstance.address, 1e30, { from: buyer })
+    })
 
+    it('Land: it should complete the order for land if the land\'s metadata has been changed', async function() {
+      landOwner = await land.ownerOfLand(5,5)
+      landOwner.should.be.equal(seller)
 
+      await marketInstance.createOrder(land.address, assetId, itemPrice, endTime, {from: seller})
+      await land.updateLandData(5, 5, 'New Metadata', {from: seller})
+      await marketInstance.executeOrder(land.address, assetId, itemPrice, {from: buyer})
+
+      updatedMetadata = await land.tokenMetadata(assetId)
+      updatedMetadata.should.be.equal('New Metadata')
+
+      newlandOwner = await land.ownerOfLand(5,5)
+      newlandOwner.should.be.equal(buyer)
+    })
+
+    it('Estate: should complete the order for the estate if the estate\'s metadata has been changed', async function() {
+      await land.createEstateWithMetadata([5,5],[5,6], seller, 'Initial Metadata', {from: seller})
+      estateId = await estateInstance.getLandEstateId(assetId)
+
+      estateOwner = await estateInstance.ownerOf(estateId)
+      estateOwner.should.be.equal(seller)
+
+      await marketInstance.createOrder(estateAddress, estateId, itemPrice, endTime, { from: seller }) 
+      await estateInstance.updateMetadata(estateId, 'Update Metadata', { from: seller })
+      await marketInstance.executeOrder(estateAddress, estateId, itemPrice, { from: buyer})
+
+      updatedMetadata = await estateInstance.getMetadata(estateId)
+      updatedMetadata.should.be.equal('Update Metadata')
+
+      newEstateOwner = await estateInstance.ownerOf(estateId)
+      newEstateOwner.should.be.equal(buyer)
+    })
+
+    it('Land: An order for land should revert if the land has been transferred', async function() {      
+      await marketInstance.createOrder(land.address, assetId, itemPrice, endTime, { from: seller }) 
+      await land.transferLand(5,5, buyer, {from: seller})
+      await marketInstance.executeOrder(land.address, assetId, itemPrice, { from: buyer})
+      .should.be.rejectedWith(EVMRevert)
+    })
+
+    it('Estate: An order for an estate should revert if the estate has been transferred', async function() {
+      await land.createEstate([5,5],[5,6], seller, {from: seller})
+      estateId = await estateInstance.getLandEstateId(assetId)
+
+      await marketInstance.createOrder(estateAddress, estateId, itemPrice, endTime, { from: seller }) 
+      await marketInstance.executeOrder(estateAddress, estateId, itemPrice, { from: buyer})
+
+      await marketInstance.createOrder(estateAddress, estateId, itemPrice, endTime, { from: seller }) 
+      .should.be.rejectedWith(EVMRevert)
+    })
+
+    // TODO: Uncomment out the `.should.be.rejectedWith(EVMRevert)` after necessary `requires` have been introduced to `_executeOrder`
+    it('Estate: should revert if an estate\'s number of land has been changed', async function() {
+      await land.createEstate([5,5],[5,6], seller, {from: seller})
+      estateId = await estateInstance.getLandEstateId(assetId)
+
+      await marketInstance.createOrder(estateAddress, estateId, itemPrice, endTime, { from: seller }) 
+      await land.assignNewParcel(5,7, seller, {from: owner})
+      await land.transferLandToEstate(5,7, estateId, {from: seller})
+
+      await marketInstance.executeOrder(estateAddress, estateId, itemPrice, { from: buyer})//.should.be.rejectedWith(EVMRevert)
+    }) 
+
+    // TODO: Uncomment out the `.should.be.rejectedWith(EVMRevert)` after necessary `requires` have been introduced to `_executeOrder`
+    it('Estate: should revert if a parcel in an estate has been switched with another parcel', async function() {
+      await land.createEstate([5,5],[5,6], seller, {from: seller})
+      estateId = await estateInstance.getLandEstateId(assetId)
+
+      await marketInstance.createOrder(estateAddress, estateId, itemPrice, endTime, { from: seller }) 
+      await land.assignNewParcel(5, 7, seller, {from: owner})
+      await land.transferLandToEstate(5,7, estateId, {from: seller})
+
+      await marketInstance.executeOrder(estateAddress, estateId, itemPrice, { from: buyer})//.should.be.rejectedWith(EVMRevert)
+    }) 
+  })
+
+  describe('When an invalid transaction is made', function() {
+    beforeEach(async function() {
+      await land.setApprovalForAll(marketInstance.address, true, {from: seller})
+      await land.setApprovalForAll(marketInstance.address, true, {from: buyer})
+
+      await estateInstance.setApprovalForAll(marketInstance.address, true, {from: seller})
+      await estateInstance.setApprovalForAll(marketInstance.address, true, {from: buyer})
+     
+      // Assign balance to buyer and allow marketplace to move ERC20
+      await erc20.setBalance(buyer, web3.toWei(10, 'ether'))
+      await erc20.approve(marketInstance.address, 1e30, { from: seller })
+      await erc20.approve(marketInstance.address, 1e30, { from: buyer })
+    })
+
+    it('should revert if an order that has already been cancelled is executed', async function() {
+      await marketInstance.createOrder(land.address, assetId, itemPrice, endTime, {from: seller})
+      await marketInstance.cancelOrder(land.address, assetId, {from: owner})
+      await marketInstance.executeOrder(land.address, assetId, itemPrice, {from: buyer})
+      .should.be.rejectedWith(EVMRevert)
+    })
+
+    it('should revert if an order that has already been executed is cancelled', async function() {
+      await marketInstance.createOrder(land.address, assetId, itemPrice, endTime, {from: seller})
+      await marketInstance.executeOrder(land.address, assetId, itemPrice, {from: buyer})
+      await marketInstance.cancelOrder(land.address, assetId, {from: owner})
+      .should.be.rejectedWith(EVMRevert)
+    })
+
+    it('should revert if an order has never been created', async function() {
+      await marketInstance.executeOrder(land.address, assetId, itemPrice, {from: buyer})
+      .should.be.rejectedWith(EVMRevert)
+    })
+  })
 })
