@@ -530,14 +530,13 @@ contract('Marketplace', function([_, owner, seller, buyer, otherAddress]) {
       newTokenOwner.should.be.equal(buyer)
 
       // check that order was deleted
-      deletedOrder = await marketInstance.orderByAsset(land.address, assetId)
+      deletedOrder = await marketInstance.orderByAssetId(land.address, assetId)
       deletedOrder[0].should.be.equal('0x0000000000000000000000000000000000000000000000000000000000000000')
       deletedOrder[1].should.be.equal('0x0000000000000000000000000000000000000000')
       deletedOrder[2].should.be.equal('0x0000000000000000000000000000000000000000')
       deletedOrder[3].should.not.equal(itemPrice)
       deletedOrder[4].should.not.equal(endTime)
     })
-
     it('Land: When the owner cut is 0, it should transfer the accepted token to seller, the land to the buyer, and delete the order', async function() {
       // set publication fee and ownerCut
       let publicationFee = web3.toWei(0.2, 'ether')
@@ -563,14 +562,115 @@ contract('Marketplace', function([_, owner, seller, buyer, otherAddress]) {
       newTokenOwner.should.be.equal(buyer)
 
       // check that order was deleted
-      deletedOrder = await marketInstance.orderByAsset(land.address, assetId)
+      deletedOrder = await marketInstance.orderByAssetId(land.address, assetId)
       deletedOrder[0].should.be.equal('0x0000000000000000000000000000000000000000000000000000000000000000')
       deletedOrder[1].should.be.equal('0x0000000000000000000000000000000000000000')
       deletedOrder[2].should.be.equal('0x0000000000000000000000000000000000000000')
       deletedOrder[3].should.not.equal(itemPrice)
       deletedOrder[4].should.not.equal(endTime)
     })
-
   })
+
+  describe('safeExecuteOrder', function() {
+    beforeEach(async function() {
+      await land.setApprovalForAll(marketInstance.address, true, {from: seller})
+      await land.setApprovalForAll(marketInstance.address, true, {from: buyer})
+
+      await estateInstance.setApprovalForAll(marketInstance.address, true, {from: seller})
+      await estateInstance.setApprovalForAll(marketInstance.address, true, {from: buyer})
+     
+      // Assign balance to buyer and allow marketplace to move ERC20
+      await erc20.setBalance(owner, web3.toWei(10, 'ether'))
+      await erc20.setBalance(buyer, web3.toWei(10, 'ether'))
+      await erc20.setBalance(seller, web3.toWei(10, 'ether'))
+      await erc20.approve(marketInstance.address, 1e30, { from: seller })
+      await erc20.approve(marketInstance.address, 1e30, { from: buyer })
+
+      await land.createEstate([5,5],[5,6], seller, {from: seller})
+
+      estateId = await estateInstance.getLandEstateId(assetId)
+      estateOwner = await estateInstance.ownerOf(estateId)
+      fingerprint = await estateInstance.getFingerprint(estateId)
+    })
+
+    it('Estate: it should transfer the ownerCut to the owner (if the owner cut is > 0), accepted token to seller, the estate to the buyer, and delete the order', async function() {
+      // set ownerCut
+      ownerCut = 10;
+
+      await marketInstance.setOwnerCut(ownerCut, { from: owner }) 
+
+      estateOwner.should.be.equal(seller)
+      await marketInstance.createOrder(
+        estateAddress, 
+        estateId, 
+        itemPrice, 
+        endTime, 
+        { from: seller }
+      )
+      await marketInstance.safeExecuteOrder(
+        estateAddress, 
+        estateId, 
+        itemPrice, 
+        fingerprint, 
+        { from: buyer }
+      )  
+
+      // should transfer estate to buyer
+      newEstateOwner = await estate.ownerOf(estateId);
+      newEstateOwner.should.be.equal(buyer)
+
+      // should transfer the ownerCut to owner
+      endingBalanceOwner = await erc20.balanceOf(owner)
+      endingBalanceOwner.should.be.bignumber.equal(web3.toWei(10.1, 'ether'))
+
+      // should transfer the itemPrice - ownerCut to seller
+      endingBalanceSeller = await erc20.balanceOf(seller)
+      endingBalanceSeller.should.be.bignumber.equal(web3.toWei(10.9, 'ether'))
+
+      // check that order was deleted
+      deletedOrder = await marketInstance.orderByAssetId(estateAddress, estateId)
+      deletedOrder[0].should.be.equal('0x0000000000000000000000000000000000000000000000000000000000000000')
+      deletedOrder[1].should.be.equal('0x0000000000000000000000000000000000000000')
+      deletedOrder[2].should.be.equal('0x0000000000000000000000000000000000000000')
+      deletedOrder[3].should.not.equal(itemPrice)
+      deletedOrder[4].should.not.equal(endTime)
+    })
+    it('Estate: When the owner cut is 0, it should transfer the accepted token to seller, the estate to the buyer, and delete the order', async function() {
+      estateOwner.should.be.equal(seller)
+      await marketInstance.createOrder(
+        estateAddress, 
+        estateId, 
+        itemPrice, 
+        endTime, 
+        { from: seller }
+      )
+      await marketInstance.safeExecuteOrder(
+        estateAddress, 
+        estateId, 
+        itemPrice, 
+        fingerprint, 
+        { from: buyer }
+      )  
+
+      // should transfer estate to buyer
+      newEstateOwner = await estate.ownerOf(estateId);
+      newEstateOwner.should.be.equal(buyer)
+
+      // should transfer the itemPrice to seller
+      endingBalanceSeller = await erc20.balanceOf(seller)
+      endingBalanceSeller.should.be.bignumber.equal(web3.toWei(11.0, 'ether'))
+
+      // check that order was deleted
+      deletedOrder = await marketInstance.orderByAssetId(estateAddress, estateId)
+      deletedOrder[0].should.be.equal('0x0000000000000000000000000000000000000000000000000000000000000000')
+      deletedOrder[1].should.be.equal('0x0000000000000000000000000000000000000000')
+      deletedOrder[2].should.be.equal('0x0000000000000000000000000000000000000000')
+      deletedOrder[3].should.not.equal(itemPrice)
+      deletedOrder[4].should.not.equal(endTime)
+    })
+  })
+
+
+
 
 })
